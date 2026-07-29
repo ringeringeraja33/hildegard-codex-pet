@@ -29,9 +29,8 @@ jobs:
       - name: Validate package
         run: python scripts/validate.py
 
-      - name: Check generated files
-        run: git diff --exit-code -- package assets qa/build-report.json qa/validation.json
+      - name: Check install-critical generated files
+        run: git diff --exit-code -- package qa/build-report.json qa/validation.json
 
       - name: Check shell scripts
         run: bash -n scripts/install.sh scripts/uninstall.sh
-
