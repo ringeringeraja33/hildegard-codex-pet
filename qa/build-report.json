@@ -1,0 +1,34 @@
+{
+  "source": "source/hildegard-pose-sheet.png",
+  "sourceSize": [
+    1254,
+    1254
+  ],
+  "poseCount": 9,
+  "atlas": "package/spritesheet.webp",
+  "atlasSize": [
+    1536,
+    2288
+  ],
+  "grid": [
+    8,
+    11
+  ],
+  "cellSize": [
+    192,
+    208
+  ],
+  "activeFrames": [
+    7,
+    8,
+    8,
+    4,
+    5,
+    8,
+    6,
+    6,
+    6,
+    8,
+    8
+  ]
+}

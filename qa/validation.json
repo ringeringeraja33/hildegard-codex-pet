@@ -1,0 +1,22 @@
+{
+  "status": "passed",
+  "manifestId": "hildegard",
+  "displayName": "小希尔德加德",
+  "spriteVersionNumber": 2,
+  "atlasSize": [
+    1536,
+    2288
+  ],
+  "grid": [
+    8,
+    11
+  ],
+  "cellSize": [
+    192,
+    208
+  ],
+  "visiblePixels": 1370217,
+  "transparentRgbResiduePixels": 0,
+  "sourceChromaFringePixels": 0,
+  "utf8Readback": "passed"
+}
