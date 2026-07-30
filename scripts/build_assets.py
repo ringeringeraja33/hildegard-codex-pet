@@ -106,8 +106,13 @@ def render_pose(
         )
 
     frame = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
-    x = (CELL_WIDTH - subject.width) // 2 + dx
-    y = foot_y - subject.height + dy
+    requested_x = (CELL_WIDTH - subject.width) // 2 + dx
+    requested_y = foot_y - subject.height + dy
+    # Motion offsets must never push pixels outside a fixed atlas cell. Codex
+    # clips each cell before displaying it, so clamp the composed subject while
+    # preserving as much of the requested movement as the transparent margin allows.
+    x = min(max(requested_x, 0), max(0, CELL_WIDTH - subject.width))
+    y = min(max(requested_y, 0), max(0, CELL_HEIGHT - subject.height))
     frame.alpha_composite(subject, (x, y))
     return remove_transparent_rgb(frame)
 
@@ -125,89 +130,34 @@ def make_rows(poses: list[Image.Image]) -> list[list[Image.Image]]:
         (-0.004, 0),
         (0.000, 0),
     )
-    idle = [
-        render_pose(poses[0], scale_delta=scale, dy=dy)
-        for scale, dy in idle_motion
-    ]
+    idle = [render_pose(poses[0], scale_delta=scale, dy=dy) for scale, dy in idle_motion]
     rows.append(idle + [transparent.copy()])
 
-    run_motion = (
-        (-3, 0, -2.0),
-        (-1, -3, -1.0),
-        (1, -5, 0.0),
-        (3, -2, 1.0),
-        (3, 0, 2.0),
-        (1, -3, 1.0),
-        (-1, -5, 0.0),
-        (-3, -2, -1.0),
-    )
-    rows.append(
-        [
-            render_pose(poses[1], dx=dx, dy=dy, angle=angle, max_width=184)
-            for dx, dy, angle in run_motion
-        ]
-    )
-    rows.append(
-        [
-            render_pose(
-                poses[1],
-                dx=-dx,
-                dy=dy,
-                angle=-angle,
-                flip=True,
-                max_width=184,
-            )
-            for dx, dy, angle in run_motion
-        ]
-    )
+    run_motion = ((-3, 0, -2.0), (-1, -3, -1.0), (1, -5, 0.0), (3, -2, 1.0), (3, 0, 2.0), (1, -3, 1.0), (-1, -5, 0.0), (-3, -2, -1.0))
+    rows.append([render_pose(poses[1], dx=dx, dy=dy, angle=angle, max_width=184) for dx, dy, angle in run_motion])
+    rows.append([render_pose(poses[1], dx=-dx, dy=dy, angle=-angle, flip=True, max_width=184) for dx, dy, angle in run_motion])
 
-    wave = [
-        render_pose(poses[3], angle=angle, dy=dy)
-        for angle, dy in ((-1.0, 0), (1.5, -1), (-1.5, 0), (1.0, -1))
-    ]
+    wave = [render_pose(poses[3], angle=angle, dy=dy) for angle, dy in ((-1.0, 0), (1.5, -1), (-1.5, 0), (1.0, -1))]
     rows.append(wave + [transparent.copy() for _ in range(4)])
 
-    jump = [
-        render_pose(poses[4], dy=dy, angle=angle, max_width=184)
-        for dy, angle in ((0, -1.0), (-17, -2.0), (-34, 0.0), (-17, 2.0), (0, 1.0))
-    ]
+    jump = [render_pose(poses[4], dy=dy, angle=angle, max_width=184) for dy, angle in ((0, -1.0), (-17, -2.0), (-34, 0.0), (-17, 2.0), (0, 1.0))]
     rows.append(jump + [transparent.copy() for _ in range(3)])
 
-    rows.append(
-        [
-            render_pose(poses[5], dx=dx, angle=angle)
-            for dx, angle in ((0, 0), (-3, -1.4), (3, 1.4), (-2, -1.0), (2, 1.0), (-1, -0.5), (1, 0.5), (0, 0))
-        ]
-    )
+    rows.append([render_pose(poses[5], dx=dx, angle=angle) for dx, angle in ((0, 0), (-3, -1.4), (3, 1.4), (-2, -1.0), (2, 1.0), (-1, -0.5), (1, 0.5), (0, 0))])
 
-    waiting = [
-        render_pose(poses[6], scale_delta=scale, dy=dy)
-        for scale, dy in ((0, 0), (0.005, -1), (0.010, -1), (0.005, 0), (0, 0), (-0.003, 0))
-    ]
+    waiting = [render_pose(poses[6], scale_delta=scale, dy=dy) for scale, dy in ((0, 0), (0.005, -1), (0.010, -1), (0.005, 0), (0, 0), (-0.003, 0))]
     rows.append(waiting + [transparent.copy() for _ in range(2)])
 
-    working = [
-        render_pose(poses[7], dx=dx, dy=dy, angle=angle, max_width=188, max_height=194)
-        for dx, dy, angle in ((0, 0, 0), (-1, 0, -0.8), (0, -1, 0), (1, 0, 0.8), (0, 0, 0), (-1, -1, -0.5))
-    ]
+    working = [render_pose(poses[7], dx=dx, dy=dy, angle=angle, max_width=188, max_height=194) for dx, dy, angle in ((0, 0, 0), (-1, 0, -0.8), (0, -1, 0), (1, 0, 0.8), (0, 0, 0), (-1, -1, -0.5))]
     rows.append(working + [transparent.copy() for _ in range(2)])
 
-    review = [
-        render_pose(poses[8], dx=dx, dy=dy, scale_delta=scale)
-        for dx, dy, scale in ((0, 0, 0), (-1, -1, 0.004), (0, -2, 0.008), (1, -1, 0.004), (0, 0, 0), (0, 0, -0.003))
-    ]
+    review = [render_pose(poses[8], dx=dx, dy=dy, scale_delta=scale) for dx, dy, scale in ((0, 0, 0), (-1, -1, 0.004), (0, -2, 0.008), (1, -1, 0.004), (0, 0, 0), (0, 0, -0.003))]
     rows.append(review + [transparent.copy() for _ in range(2)])
 
-    upper_look = [
-        render_pose(poses[0], dx=dx, dy=dy, angle=angle)
-        for dx, dy, angle in ((-5, 1, -3.0), (-4, -1, -2.0), (-2, -3, -1.0), (0, -4, 0), (2, -3, 1.0), (4, -1, 2.0), (5, 1, 3.0), (3, 2, 2.0))
-    ]
+    upper_look = [render_pose(poses[0], dx=dx, dy=dy, angle=angle) for dx, dy, angle in ((-5, 1, -3.0), (-4, -1, -2.0), (-2, -3, -1.0), (0, -4, 0), (2, -3, 1.0), (4, -1, 2.0), (5, 1, 3.0), (3, 2, 2.0))]
     rows.append(upper_look)
 
-    lower_look = [
-        render_pose(poses[0], dx=dx, dy=dy, angle=angle)
-        for dx, dy, angle in ((3, 3, 2.0), (1, 4, 1.0), (-1, 4, 0), (-3, 3, -1.0), (-5, 2, -3.0), (-4, 0, -2.0), (-2, -2, -1.0), (1, -2, 1.0))
-    ]
+    lower_look = [render_pose(poses[0], dx=dx, dy=dy, angle=angle) for dx, dy, angle in ((3, 3, 2.0), (1, 4, 1.0), (-1, 4, 0), (-3, 3, -1.0), (-5, 2, -3.0), (-4, 0, -2.0), (-2, -2, -1.0), (1, -2, 1.0))]
     rows.append(lower_look)
 
     if len(rows) != ROWS or any(len(row) != COLUMNS for row in rows):
@@ -219,10 +169,7 @@ def build_atlas(rows: list[list[Image.Image]]) -> Image.Image:
     atlas = Image.new("RGBA", ATLAS_SIZE, (0, 0, 0, 0))
     for row_index, row in enumerate(rows):
         for column_index, frame in enumerate(row):
-            atlas.alpha_composite(
-                frame,
-                (column_index * CELL_WIDTH, row_index * CELL_HEIGHT),
-            )
+            atlas.alpha_composite(frame, (column_index * CELL_WIDTH, row_index * CELL_HEIGHT))
     return remove_transparent_rgb(atlas)
 
 
@@ -232,10 +179,7 @@ def checkerboard(size: tuple[int, int], block: int = 12) -> Image.Image:
     for y in range(0, size[1], block):
         for x in range(0, size[0], block):
             if (x // block + y // block) % 2:
-                draw.rectangle(
-                    (x, y, x + block - 1, y + block - 1),
-                    fill="#ddd9cf",
-                )
+                draw.rectangle((x, y, x + block - 1, y + block - 1), fill="#ddd9cf")
     return board
 
 
@@ -250,11 +194,7 @@ def build_contact_sheet(rows: list[list[Image.Image]]) -> Image.Image:
     preview_cell = (96, 104)
     label_height = 22
     row_height = preview_cell[1] + label_height
-    sheet = Image.new(
-        "RGB",
-        (preview_cell[0] * COLUMNS, row_height * ROWS),
-        "#12241e",
-    )
+    sheet = Image.new("RGB", (preview_cell[0] * COLUMNS, row_height * ROWS), "#12241e")
     draw = ImageDraw.Draw(sheet)
     font = ImageFont.load_default()
     for row_index, row in enumerate(rows):
@@ -262,21 +202,10 @@ def build_contact_sheet(rows: list[list[Image.Image]]) -> Image.Image:
         draw.text((6, top + 5), ROW_LABELS[row_index], fill="#f4efe2", font=font)
         count_label = f"{ACTIVE_FRAMES[row_index]} frames"
         label_width = draw.textbbox((0, 0), count_label, font=font)[2]
-        draw.text(
-            (sheet.width - label_width - 6, top + 5),
-            count_label,
-            fill="#d6c388",
-            font=font,
-        )
+        draw.text((sheet.width - label_width - 6, top + 5), count_label, fill="#d6c388", font=font)
         for column_index, frame in enumerate(row):
             preview = flatten_preview(frame, preview_cell)
-            sheet.paste(
-                preview,
-                (
-                    column_index * preview_cell[0],
-                    top + label_height,
-                ),
-            )
+            sheet.paste(preview, (column_index * preview_cell[0], top + label_height))
     return sheet
 
 
@@ -286,10 +215,7 @@ def build_look_sheet(rows: list[list[Image.Image]]) -> Image.Image:
         for column_index, frame in enumerate(row):
             background = checkerboard((CELL_WIDTH, CELL_HEIGHT), block=16)
             background.paste(frame, mask=frame.getchannel("A"))
-            sheet.paste(
-                background,
-                (column_index * CELL_WIDTH, row_offset * CELL_HEIGHT),
-            )
+            sheet.paste(background, (column_index * CELL_WIDTH, row_offset * CELL_HEIGHT))
     return sheet
 
 
@@ -303,15 +229,7 @@ def save_idle_gif(frames: list[Image.Image]) -> None:
         palette.paste(0, mask)
         palette.info["transparency"] = 0
         gif_frames.append(palette)
-    gif_frames[0].save(
-        IDLE_GIF_PATH,
-        save_all=True,
-        append_images=gif_frames[1:],
-        duration=(220, 170, 170, 170, 220, 260, 700),
-        loop=0,
-        disposal=2,
-        transparency=0,
-    )
+    gif_frames[0].save(IDLE_GIF_PATH, save_all=True, append_images=gif_frames[1:], duration=(220, 170, 170, 170, 220, 260, 700), loop=0, disposal=2, transparency=0)
 
 
 def main() -> None:
@@ -329,24 +247,11 @@ def main() -> None:
     build_look_sheet(rows).save(LOOK_SHEET_PATH, "PNG", optimize=True)
     save_idle_gif(rows[0][:7])
 
-    report = {
-        "source": str(SOURCE.relative_to(ROOT)),
-        "sourceSize": list(source.size),
-        "poseCount": len(poses),
-        "atlas": str(ATLAS_PATH.relative_to(ROOT)),
-        "atlasSize": list(atlas.size),
-        "grid": [COLUMNS, ROWS],
-        "cellSize": [CELL_WIDTH, CELL_HEIGHT],
-        "activeFrames": list(ACTIVE_FRAMES),
-    }
-    BUILD_REPORT_PATH.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    report = {"source": str(SOURCE.relative_to(ROOT)), "sourceSize": list(source.size), "poseCount": len(poses), "atlas": str(ATLAS_PATH.relative_to(ROOT)), "atlasSize": list(atlas.size), "grid": [COLUMNS, ROWS], "cellSize": [CELL_WIDTH, CELL_HEIGHT], "activeFrames": list(ACTIVE_FRAMES)}
+    BUILD_REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Built {ATLAS_PATH.relative_to(ROOT)}: {atlas.size[0]}×{atlas.size[1]}")
     print("Generated contact sheet, look-direction sheet, idle GIF and build report")
 
 
 if __name__ == "__main__":
     main()
-
