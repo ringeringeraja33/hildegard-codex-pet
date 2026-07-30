@@ -1,11 +1,11 @@
 {
-  "source": "source/hildegard-pose-sheet.png",
+  "source": "source\\hildegard-pose-sheet.png",
   "sourceSize": [
     1254,
     1254
   ],
   "poseCount": 9,
-  "atlas": "package/spritesheet.webp",
+  "atlas": "package\\spritesheet.webp",
   "atlasSize": [
     1536,
     2288
