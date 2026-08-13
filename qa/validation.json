@@ -15,7 +15,27 @@
     192,
     208
   ],
-  "visiblePixels": 1373787,
+  "visiblePixels": 1343920,
+  "idleFootBaselines": [
+    204,
+    204,
+    204,
+    204,
+    204,
+    204,
+    204
+  ],
+  "waveFootBaselines": [
+    204,
+    204,
+    204,
+    204,
+    204,
+    204,
+    204,
+    204
+  ],
+  "hoverState": "grounded-wave",
   "transparentRgbResiduePixels": 0,
   "sourceChromaFringePixels": 0,
   "utf8Readback": "passed"

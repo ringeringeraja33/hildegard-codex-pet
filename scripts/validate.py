@@ -7,7 +7,7 @@ import json
 import math
 from pathlib import Path
 
-from PIL import Image, ImageFilter
+from PIL import Image, ImageChops, ImageFilter
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +88,39 @@ def main() -> None:
     visible_pixels = sum(alpha > 0 for _, _, _, alpha in rgba_pixels)
     assert visible_pixels > 250_000, f"unexpected visible coverage: {visible_pixels}"
 
+    def atlas_cell(row: int, column: int) -> Image.Image:
+        left = column * EXPECTED_CELL_SIZE[0]
+        top = row * EXPECTED_CELL_SIZE[1]
+        return image.crop(
+            (
+                left,
+                top,
+                left + EXPECTED_CELL_SIZE[0],
+                top + EXPECTED_CELL_SIZE[1],
+            )
+        )
+
+    idle_foot_baselines = [
+        atlas_cell(0, column).getchannel("A").getbbox()[3]
+        for column in range(7)
+    ]
+    assert len(set(idle_foot_baselines)) == 1, (
+        f"idle baseline jitter: {idle_foot_baselines}"
+    )
+
+    wave_foot_baselines = [
+        atlas_cell(3, column).getchannel("A").getbbox()[3]
+        for column in range(8)
+    ]
+    assert len(set(wave_foot_baselines)) == 1, (
+        f"wave baseline jitter: {wave_foot_baselines}"
+    )
+    assert all(
+        ImageChops.difference(atlas_cell(3, column), atlas_cell(4, column)).getbbox()
+        is None
+        for column in range(8)
+    ), "hover row must reuse the grounded wave cycle"
+
     fringe_pixels = chroma_fringe_count(image)
     assert fringe_pixels == 0, f"source chroma fringe pixels: {fringe_pixels}"
 
@@ -108,6 +141,9 @@ def main() -> None:
         "grid": list(EXPECTED_GRID),
         "cellSize": list(EXPECTED_CELL_SIZE),
         "visiblePixels": visible_pixels,
+        "idleFootBaselines": idle_foot_baselines,
+        "waveFootBaselines": wave_foot_baselines,
+        "hoverState": "grounded-wave",
         "transparentRgbResiduePixels": transparent_rgb_residue,
         "sourceChromaFringePixels": fringe_pixels,
         "utf8Readback": "passed",
