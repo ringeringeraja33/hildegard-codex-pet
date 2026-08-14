@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "source" / "hildegard-pose-sheet.png"
+ANIMATION_SOURCE = ROOT / "source" / "hildegard-animation-sheet.png"
 ATLAS_PATH = ROOT / "package" / "spritesheet.webp"
 CONTACT_SHEET_PATH = ROOT / "assets" / "contact-sheet.png"
 LOOK_SHEET_PATH = ROOT / "assets" / "look-directions.png"
@@ -28,7 +29,7 @@ ROW_LABELS = (
     "row 1 · running-right",
     "row 2 · running-left",
     "row 3 · waving",
-    "row 4 · jumping",
+    "row 4 · hover-wave",
     "row 5 · failed",
     "row 6 · waiting",
     "row 7 · working",
@@ -37,7 +38,7 @@ ROW_LABELS = (
     "row 10 · look 180–337.5",
 )
 
-ACTIVE_FRAMES = (7, 8, 8, 4, 5, 8, 6, 6, 6, 8, 8)
+ACTIVE_FRAMES = (7, 8, 8, 8, 8, 8, 6, 6, 6, 8, 8)
 
 
 def remove_transparent_rgb(image: Image.Image) -> Image.Image:
@@ -75,6 +76,40 @@ def extract_poses(sheet: Image.Image) -> list[Image.Image]:
                 raise ValueError(f"pose {len(poses)} has no visible pixels")
             poses.append(cell.crop(bbox))
     return poses
+
+
+def extract_animation_rows(sheet: Image.Image) -> tuple[list[Image.Image], list[Image.Image]]:
+    """Extract fixed-alignment wave and idle frames from the 4×2 source sheet."""
+    if sheet.width % 4 or sheet.height % 2:
+        raise ValueError(f"animation sheet must divide into 4×2 cells: {sheet.size}")
+
+    cell_width = sheet.width // 4
+    cell_height = sheet.height // 2
+    rows: list[list[Image.Image]] = []
+    for row in range(2):
+        cells = [
+            sheet.crop(
+                (
+                    column * cell_width,
+                    row * cell_height,
+                    (column + 1) * cell_width,
+                    (row + 1) * cell_height,
+                )
+            )
+            for column in range(4)
+        ]
+        bounds = [cell.getchannel("A").getbbox() for cell in cells]
+        if any(bound is None for bound in bounds):
+            raise ValueError(f"animation row {row} contains an empty frame")
+        visible_bounds = [bound for bound in bounds if bound is not None]
+        union = (
+            min(bound[0] for bound in visible_bounds),
+            min(bound[1] for bound in visible_bounds),
+            max(bound[2] for bound in visible_bounds),
+            max(bound[3] for bound in visible_bounds),
+        )
+        rows.append([cell.crop(union) for cell in cells])
+    return rows[0], rows[1]
 
 
 def render_pose(
@@ -117,48 +152,43 @@ def render_pose(
     return remove_transparent_rgb(frame)
 
 
-def make_rows(poses: list[Image.Image]) -> list[list[Image.Image]]:
+def make_rows(
+    poses: list[Image.Image],
+    wave_sources: list[Image.Image],
+    idle_sources: list[Image.Image],
+) -> list[list[Image.Image]]:
     transparent = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
     rows: list[list[Image.Image]] = []
 
-    idle_motion = (
-        (0.000, 0),
-        (0.008, -1),
-        (0.014, -2),
-        (0.008, -1),
-        (0.000, 0),
-        (-0.004, 0),
-        (0.000, 0),
-    )
-    idle = [render_pose(poses[0], scale_delta=scale, dy=dy) for scale, dy in idle_motion]
+    idle_order = (0, 0, 1, 2, 2, 1, 3)
+    idle = [render_pose(idle_sources[index]) for index in idle_order]
     rows.append(idle + [transparent.copy()])
 
-    run_motion = ((-3, 0, -2.0), (-1, -3, -1.0), (1, -5, 0.0), (3, -2, 1.0), (3, 0, 2.0), (1, -3, 1.0), (-1, -5, 0.0), (-3, -2, -1.0))
-    rows.append([render_pose(poses[1], dx=dx, dy=dy, angle=angle, max_width=184) for dx, dy, angle in run_motion])
-    rows.append([render_pose(poses[1], dx=-dx, dy=dy, angle=-angle, flip=True, max_width=184) for dx, dy, angle in run_motion])
+    run_motion = ((-2, 0), (-1, -2), (0, -3), (1, -1), (2, 0), (1, -2), (0, -3), (-1, -1))
+    rows.append([render_pose(poses[1], dx=dx, dy=dy, max_width=184) for dx, dy in run_motion])
+    rows.append([render_pose(poses[1], dx=-dx, dy=dy, flip=True, max_width=184) for dx, dy in run_motion])
 
-    wave = [render_pose(poses[3], angle=angle, dy=dy) for angle, dy in ((-1.0, 0), (1.5, -1), (-1.5, 0), (1.0, -1))]
-    rows.append(wave + [transparent.copy() for _ in range(4)])
+    wave_order = (0, 1, 2, 3, 2, 1, 0, 3)
+    wave = [render_pose(wave_sources[index]) for index in wave_order]
+    rows.append(wave)
+    # Codex v2 reserves row 4 for the pointer-hover "jump" state. Reuse the
+    # grounded wave cycle here so hovering never makes Hildegard jump.
+    rows.append([frame.copy() for frame in wave])
 
-    jump = [render_pose(poses[4], dy=dy, angle=angle, max_width=184) for dy, angle in ((0, -1.0), (-17, -2.0), (-34, 0.0), (-17, 2.0), (0, 1.0))]
-    rows.append(jump + [transparent.copy() for _ in range(3)])
+    rows.append([render_pose(poses[5]) for _ in range(8)])
 
-    rows.append([render_pose(poses[5], dx=dx, angle=angle) for dx, angle in ((0, 0), (-3, -1.4), (3, 1.4), (-2, -1.0), (2, 1.0), (-1, -0.5), (1, 0.5), (0, 0))])
-
-    waiting = [render_pose(poses[6], scale_delta=scale, dy=dy) for scale, dy in ((0, 0), (0.005, -1), (0.010, -1), (0.005, 0), (0, 0), (-0.003, 0))]
+    waiting = [render_pose(poses[6]) for _ in range(6)]
     rows.append(waiting + [transparent.copy() for _ in range(2)])
 
-    working = [render_pose(poses[7], dx=dx, dy=dy, angle=angle, max_width=188, max_height=194) for dx, dy, angle in ((0, 0, 0), (-1, 0, -0.8), (0, -1, 0), (1, 0, 0.8), (0, 0, 0), (-1, -1, -0.5))]
+    working = [render_pose(poses[7], max_width=188, max_height=194) for _ in range(6)]
     rows.append(working + [transparent.copy() for _ in range(2)])
 
-    review = [render_pose(poses[8], dx=dx, dy=dy, scale_delta=scale) for dx, dy, scale in ((0, 0, 0), (-1, -1, 0.004), (0, -2, 0.008), (1, -1, 0.004), (0, 0, 0), (0, 0, -0.003))]
+    review = [render_pose(poses[8]) for _ in range(6)]
     rows.append(review + [transparent.copy() for _ in range(2)])
 
-    upper_look = [render_pose(poses[0], dx=dx, dy=dy, angle=angle) for dx, dy, angle in ((-5, 1, -3.0), (-4, -1, -2.0), (-2, -3, -1.0), (0, -4, 0), (2, -3, 1.0), (4, -1, 2.0), (5, 1, 3.0), (3, 2, 2.0))]
-    rows.append(upper_look)
-
-    lower_look = [render_pose(poses[0], dx=dx, dy=dy, angle=angle) for dx, dy, angle in ((3, 3, 2.0), (1, 4, 1.0), (-1, 4, 0), (-3, 3, -1.0), (-5, 2, -3.0), (-4, 0, -2.0), (-2, -2, -1.0), (1, -2, 1.0))]
-    rows.append(lower_look)
+    look_frame = render_pose(idle_sources[0])
+    rows.append([look_frame.copy() for _ in range(8)])
+    rows.append([look_frame.copy() for _ in range(8)])
 
     if len(rows) != ROWS or any(len(row) != COLUMNS for row in rows):
         raise AssertionError("atlas row construction failed")
@@ -234,8 +264,10 @@ def save_idle_gif(frames: list[Image.Image]) -> None:
 
 def main() -> None:
     source = Image.open(SOURCE).convert("RGBA")
+    animation_source = Image.open(ANIMATION_SOURCE).convert("RGBA")
     poses = extract_poses(source)
-    rows = make_rows(poses)
+    wave_sources, idle_sources = extract_animation_rows(animation_source)
+    rows = make_rows(poses, wave_sources, idle_sources)
     atlas = build_atlas(rows)
 
     ROOT.joinpath("package").mkdir(exist_ok=True)
@@ -247,7 +279,7 @@ def main() -> None:
     build_look_sheet(rows).save(LOOK_SHEET_PATH, "PNG", optimize=True)
     save_idle_gif(rows[0][:7])
 
-    report = {"source": str(SOURCE.relative_to(ROOT)), "sourceSize": list(source.size), "poseCount": len(poses), "atlas": str(ATLAS_PATH.relative_to(ROOT)), "atlasSize": list(atlas.size), "grid": [COLUMNS, ROWS], "cellSize": [CELL_WIDTH, CELL_HEIGHT], "activeFrames": list(ACTIVE_FRAMES)}
+    report = {"source": str(SOURCE.relative_to(ROOT)), "sourceSize": list(source.size), "animationSource": str(ANIMATION_SOURCE.relative_to(ROOT)), "animationSourceSize": list(animation_source.size), "poseCount": len(poses), "atlas": str(ATLAS_PATH.relative_to(ROOT)), "atlasSize": list(atlas.size), "grid": [COLUMNS, ROWS], "cellSize": [CELL_WIDTH, CELL_HEIGHT], "activeFrames": list(ACTIVE_FRAMES)}
     BUILD_REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Built {ATLAS_PATH.relative_to(ROOT)}: {atlas.size[0]}×{atlas.size[1]}")
     print("Generated contact sheet, look-direction sheet, idle GIF and build report")

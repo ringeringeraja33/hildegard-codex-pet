@@ -10,7 +10,7 @@
 
 ## 中文
 
-小希尔德加德是一只非官方 Codex 桌宠。她身着本笃会服饰，携带手抄本、羽毛笔与药草，会根据工作、等待、审阅、运行、失败和视线方向切换动作。视觉设计借鉴罗曼式手抄本的色彩气质，角色与动画素材均为本项目原创生成和整理。
+小希尔德加德是一只非官方 Codex 桌宠。她有深绿色眼睛，头顶燃烧着代表灵视的火焰，身着简洁的本笃会服饰，站立待机时持书与牧杖。光标悬停时，她会站在原地自然挥手，不再跳跃；待机动画只保留眨眼和火焰细微变化，避免整只角色抖动。角色与动画素材均为本项目原创生成和整理。
 
 ### 图集规格
 
@@ -66,7 +66,7 @@ python3 scripts/validate.py
 
 ## English
 
-Hildegard is an unofficial Codex pet inspired by the historical figure Hildegard von Bingen. She carries an illuminated manuscript, writes musical notation, gathers herbs, and reacts to working, waiting, reviewing, running, failure, and look-direction states. The original character design combines a Benedictine habit with a restrained Romanesque manuscript palette.
+Hildegard is an unofficial Codex pet inspired by the historical figure Hildegard von Bingen. She has deep green eyes, a compact crown of vision flames, a restrained Benedictine habit, an illuminated manuscript, and a pastoral staff. Pointer hover now uses a grounded wave instead of a jump, while idle motion is limited to blinking and subtle flame changes to avoid whole-character jitter.
 
 ### Atlas specification
 
