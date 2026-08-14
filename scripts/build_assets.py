@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +17,7 @@ CONTACT_SHEET_PATH = ROOT / "assets" / "contact-sheet.png"
 LOOK_SHEET_PATH = ROOT / "assets" / "look-directions.png"
 IDLE_GIF_PATH = ROOT / "assets" / "idle.gif"
 BUILD_REPORT_PATH = ROOT / "qa" / "build-report.json"
+WAVE_FACE_LOCK_BOX = (58, 28, 150, 130)
 
 CELL_WIDTH = 192
 CELL_HEIGHT = 208
@@ -172,14 +173,16 @@ def isolate_idle_eye_motion(frames: list[Image.Image]) -> list[Image.Image]:
         remove_transparent_rgb(Image.composite(frame, base, eye_mask))
         for frame in frames
     ]
+    # Codex controls atlas playback speed globally, so keep five of the seven
+    # frames fully open and spend only two frames on the blink itself.
     return [
-        keyframes[0],
-        remove_transparent_rgb(Image.blend(keyframes[0], keyframes[1], 0.5)),
+        keyframes[0].copy(),
+        keyframes[0].copy(),
+        keyframes[0].copy(),
+        keyframes[0].copy(),
         keyframes[1],
         keyframes[2],
-        keyframes[1].copy(),
-        remove_transparent_rgb(Image.blend(keyframes[1], keyframes[3], 0.5)),
-        keyframes[3],
+        keyframes[0].copy(),
     ]
 
 
@@ -197,10 +200,41 @@ def isolate_wave_arm_motion(frames: list[Image.Image]) -> list[Image.Image]:
         ),
         blur_radius=4,
     )
+    # The feathered arm mask previously leaked a few pixels into the left edge
+    # of the face. Multiply by a feathered inverse face guard so every facial
+    # pixel remains identical while the raised hand and sleeve animate.
+    face_guard = Image.new("L", base.size, 255)
+    guard_draw = ImageDraw.Draw(face_guard)
+    guard_draw.rounded_rectangle(
+        (
+            round(width * 0.24),
+            round(height * 0.10),
+            round(width * 0.86),
+            round(height * 0.61),
+        ),
+        radius=round(width * 0.12),
+        fill=0,
+    )
+    face_guard = face_guard.filter(ImageFilter.GaussianBlur(2))
+    arm_mask = ImageChops.multiply(arm_mask, face_guard)
     return [
         remove_transparent_rgb(Image.composite(frame, base, arm_mask))
         for frame in frames
     ]
+
+
+def lock_frame_region(
+    frames: list[Image.Image],
+    box: tuple[int, int, int, int],
+) -> list[Image.Image]:
+    """Copy one anchor patch into every frame for exact pixel stability."""
+    anchor = frames[0].crop(box)
+    locked = [frames[0]]
+    for frame in frames[1:]:
+        result = frame.copy()
+        result.paste(anchor, box[:2])
+        locked.append(remove_transparent_rgb(result))
+    return locked
 
 
 def render_pose(
@@ -261,6 +295,7 @@ def make_rows(
     wave_keyframes = isolate_wave_arm_motion(wave_sources)
     wave_order = (0, 1, 2, 3, 2, 1, 0, 1)
     wave = [render_pose(wave_keyframes[index]) for index in wave_order]
+    wave = lock_frame_region(wave, WAVE_FACE_LOCK_BOX)
     rows.append(wave)
     # Codex v2 reserves row 4 for the pointer-hover "jump" state. Reuse the
     # grounded wave cycle here so hovering never makes Hildegard jump.
@@ -350,7 +385,7 @@ def save_idle_gif(frames: list[Image.Image]) -> None:
         palette.paste(0, mask)
         palette.info["transparency"] = 0
         gif_frames.append(palette)
-    gif_frames[0].save(IDLE_GIF_PATH, save_all=True, append_images=gif_frames[1:], duration=(100, 100, 100, 65, 65, 65, 450), loop=0, disposal=2, transparency=0)
+    gif_frames[0].save(IDLE_GIF_PATH, save_all=True, append_images=gif_frames[1:], duration=(250, 250, 250, 250, 35, 45, 700), loop=0, disposal=2, transparency=0)
 
 
 def main() -> None:

@@ -15,7 +15,7 @@
     192,
     208
   ],
-  "visiblePixels": 1344767,
+  "visiblePixels": 1344782,
   "idleFootBaselines": [
     204,
     204,
@@ -54,6 +54,15 @@
     106.294,
     106.291
   ],
+  "waveFacePixelLock": true,
+  "idleOpenFrameColumns": [
+    0,
+    1,
+    2,
+    3,
+    6
+  ],
+  "animatedCellsTouchingBounds": 0,
   "hoverState": "grounded-wave",
   "transparentRgbResiduePixels": 0,
   "sourceChromaFringePixels": 0,
