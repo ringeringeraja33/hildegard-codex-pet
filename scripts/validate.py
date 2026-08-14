@@ -144,6 +144,51 @@ def main() -> None:
     assert max(wave_body_centers) - min(wave_body_centers) <= 1.0, (
         f"wave horizontal jitter: {wave_body_centers}"
     )
+    wave_face_box = (58, 28, 150, 130)
+    wave_face = atlas_cell(3, 0).crop(wave_face_box)
+    wave_face_locked = all(
+        ImageChops.difference(
+            wave_face,
+            atlas_cell(3, column).crop(wave_face_box),
+        ).getbbox()
+        is None
+        for column in range(1, 8)
+    )
+    assert wave_face_locked, "wave animation changes pixels inside the face guard"
+
+    idle_open_frame_columns = (0, 1, 2, 3, 6)
+    idle_open_frame = atlas_cell(0, idle_open_frame_columns[0])
+    assert all(
+        ImageChops.difference(
+            idle_open_frame,
+            atlas_cell(0, column),
+        ).getbbox()
+        is None
+        for column in idle_open_frame_columns[1:]
+    ), "idle open-eye hold frames must be pixel-identical"
+
+    animated_cells = [
+        atlas_cell(row, column)
+        for row in (0, 3, 4)
+        for column in range(8)
+        if atlas_cell(row, column).getchannel("A").getbbox() is not None
+    ]
+    cell_width, cell_height = EXPECTED_CELL_SIZE
+    visible_border_pixels = sum(
+        any(
+            frame.getchannel("A").getpixel((x, y)) > 0
+            for x, y in (
+                *((x, 0) for x in range(cell_width)),
+                *((x, cell_height - 1) for x in range(cell_width)),
+                *((0, y) for y in range(cell_height)),
+                *((cell_width - 1, y) for y in range(cell_height)),
+            )
+        )
+        for frame in animated_cells
+    )
+    assert visible_border_pixels == 0, (
+        f"animated cells touch a pixel boundary: {visible_border_pixels}"
+    )
     assert all(
         ImageChops.difference(atlas_cell(3, column), atlas_cell(4, column)).getbbox()
         is None
@@ -174,6 +219,9 @@ def main() -> None:
         "waveFootBaselines": wave_foot_baselines,
         "idleBodyCenters": [round(value, 3) for value in idle_body_centers],
         "waveBodyCenters": [round(value, 3) for value in wave_body_centers],
+        "waveFacePixelLock": wave_face_locked,
+        "idleOpenFrameColumns": list(idle_open_frame_columns),
+        "animatedCellsTouchingBounds": visible_border_pixels,
         "hoverState": "grounded-wave",
         "transparentRgbResiduePixels": transparent_rgb_residue,
         "sourceChromaFringePixels": fringe_pixels,
