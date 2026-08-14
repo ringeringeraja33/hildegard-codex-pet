@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,7 +79,7 @@ def extract_poses(sheet: Image.Image) -> list[Image.Image]:
 
 
 def extract_animation_rows(sheet: Image.Image) -> tuple[list[Image.Image], list[Image.Image]]:
-    """Extract fixed-alignment wave and idle frames from the 4×2 source sheet."""
+    """Extract and anchor wave and idle frames from the 4×2 source sheet."""
     if sheet.width % 4 or sheet.height % 2:
         raise ValueError(f"animation sheet must divide into 4×2 cells: {sheet.size}")
 
@@ -102,14 +102,105 @@ def extract_animation_rows(sheet: Image.Image) -> tuple[list[Image.Image], list[
         if any(bound is None for bound in bounds):
             raise ValueError(f"animation row {row} contains an empty frame")
         visible_bounds = [bound for bound in bounds if bound is not None]
-        union = (
-            min(bound[0] for bound in visible_bounds),
-            min(bound[1] for bound in visible_bounds),
-            max(bound[2] for bound in visible_bounds),
-            max(bound[3] for bound in visible_bounds),
+
+        anchors: list[tuple[float, int]] = []
+        for cell, bound in zip(cells, visible_bounds):
+            alpha = cell.getchannel("A")
+            lower_top = bound[1] + round((bound[3] - bound[1]) * 0.65)
+            lower = alpha.crop((bound[0], lower_top, bound[2], bound[3]))
+            weights = list(lower.getdata())
+            total = sum(weights)
+            if not total:
+                raise ValueError(f"animation row {row} has no lower-body anchor")
+            anchor_x = bound[0] + sum(
+                (index % lower.width) * weight
+                for index, weight in enumerate(weights)
+            ) / total
+            anchors.append((anchor_x, bound[3]))
+
+        left_extent = max(
+            anchor_x - bound[0]
+            for bound, (anchor_x, _) in zip(visible_bounds, anchors)
         )
-        rows.append([cell.crop(union) for cell in cells])
+        right_extent = max(
+            bound[2] - anchor_x
+            for bound, (anchor_x, _) in zip(visible_bounds, anchors)
+        )
+        row_height = max(bound[3] - bound[1] for bound in visible_bounds)
+        anchor_target_x = round(left_extent)
+        row_width = anchor_target_x + round(right_extent)
+
+        aligned: list[Image.Image] = []
+        for cell, bound, (anchor_x, _) in zip(cells, visible_bounds, anchors):
+            subject = cell.crop(bound)
+            frame = Image.new("RGBA", (row_width, row_height), (0, 0, 0, 0))
+            x = round(anchor_target_x - (anchor_x - bound[0]))
+            y = row_height - subject.height
+            frame.alpha_composite(subject, (x, y))
+            aligned.append(remove_transparent_rgb(frame))
+        rows.append(aligned)
     return rows[0], rows[1]
+
+
+def feathered_region_mask(
+    size: tuple[int, int],
+    box: tuple[int, int, int, int],
+    *,
+    blur_radius: int,
+) -> Image.Image:
+    mask = Image.new("L", size, 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle(box, radius=blur_radius * 3, fill=255)
+    return mask.filter(ImageFilter.GaussianBlur(blur_radius))
+
+
+def isolate_idle_eye_motion(frames: list[Image.Image]) -> list[Image.Image]:
+    """Keep the body fixed and copy only the eyelid region from each keyframe."""
+    base = frames[0]
+    width, height = base.size
+    eye_mask = feathered_region_mask(
+        base.size,
+        (
+            round(width * 0.27),
+            round(height * 0.23),
+            round(width * 0.79),
+            round(height * 0.48),
+        ),
+        blur_radius=4,
+    )
+    keyframes = [
+        remove_transparent_rgb(Image.composite(frame, base, eye_mask))
+        for frame in frames
+    ]
+    return [
+        keyframes[0],
+        remove_transparent_rgb(Image.blend(keyframes[0], keyframes[1], 0.5)),
+        keyframes[1],
+        keyframes[2],
+        keyframes[1].copy(),
+        remove_transparent_rgb(Image.blend(keyframes[1], keyframes[3], 0.5)),
+        keyframes[3],
+    ]
+
+
+def isolate_wave_arm_motion(frames: list[Image.Image]) -> list[Image.Image]:
+    """Keep the standing pose fixed and copy only the waving arm region."""
+    base = frames[0]
+    width, height = base.size
+    arm_mask = feathered_region_mask(
+        base.size,
+        (
+            0,
+            round(height * 0.14),
+            round(width * 0.57),
+            round(height * 0.66),
+        ),
+        blur_radius=4,
+    )
+    return [
+        remove_transparent_rgb(Image.composite(frame, base, arm_mask))
+        for frame in frames
+    ]
 
 
 def render_pose(
@@ -160,16 +251,16 @@ def make_rows(
     transparent = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
     rows: list[list[Image.Image]] = []
 
-    idle_order = (0, 0, 1, 2, 2, 1, 3)
-    idle = [render_pose(idle_sources[index]) for index in idle_order]
+    idle = [render_pose(frame) for frame in isolate_idle_eye_motion(idle_sources)]
     rows.append(idle + [transparent.copy()])
 
     run_motion = ((-2, 0), (-1, -2), (0, -3), (1, -1), (2, 0), (1, -2), (0, -3), (-1, -1))
     rows.append([render_pose(poses[1], dx=dx, dy=dy, max_width=184) for dx, dy in run_motion])
     rows.append([render_pose(poses[1], dx=-dx, dy=dy, flip=True, max_width=184) for dx, dy in run_motion])
 
-    wave_order = (0, 1, 2, 3, 2, 1, 0, 3)
-    wave = [render_pose(wave_sources[index]) for index in wave_order]
+    wave_keyframes = isolate_wave_arm_motion(wave_sources)
+    wave_order = (0, 1, 2, 3, 2, 1, 0, 1)
+    wave = [render_pose(wave_keyframes[index]) for index in wave_order]
     rows.append(wave)
     # Codex v2 reserves row 4 for the pointer-hover "jump" state. Reuse the
     # grounded wave cycle here so hovering never makes Hildegard jump.
@@ -259,7 +350,7 @@ def save_idle_gif(frames: list[Image.Image]) -> None:
         palette.paste(0, mask)
         palette.info["transparency"] = 0
         gif_frames.append(palette)
-    gif_frames[0].save(IDLE_GIF_PATH, save_all=True, append_images=gif_frames[1:], duration=(220, 170, 170, 170, 220, 260, 700), loop=0, disposal=2, transparency=0)
+    gif_frames[0].save(IDLE_GIF_PATH, save_all=True, append_images=gif_frames[1:], duration=(100, 100, 100, 65, 65, 65, 450), loop=0, disposal=2, transparency=0)
 
 
 def main() -> None:

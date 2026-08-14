@@ -59,6 +59,21 @@ def assert_utf8_text(path: Path) -> str:
     return text
 
 
+def lower_body_center_x(frame: Image.Image) -> float:
+    alpha = frame.getchannel("A")
+    bound = alpha.getbbox()
+    assert bound is not None, "animation frame is empty"
+    lower_top = bound[1] + round((bound[3] - bound[1]) * 0.65)
+    lower = alpha.crop((bound[0], lower_top, bound[2], bound[3]))
+    weights = list(pixel_data(lower))
+    total = sum(weights)
+    assert total, "animation frame has no lower-body anchor"
+    return bound[0] + sum(
+        (index % lower.width) * weight
+        for index, weight in enumerate(weights)
+    ) / total
+
+
 def main() -> None:
     manifest_text = assert_utf8_text(MANIFEST)
     manifest = json.loads(manifest_text)
@@ -115,6 +130,20 @@ def main() -> None:
     assert len(set(wave_foot_baselines)) == 1, (
         f"wave baseline jitter: {wave_foot_baselines}"
     )
+    idle_body_centers = [
+        lower_body_center_x(atlas_cell(0, column))
+        for column in range(7)
+    ]
+    assert max(idle_body_centers) - min(idle_body_centers) <= 1.0, (
+        f"idle horizontal jitter: {idle_body_centers}"
+    )
+    wave_body_centers = [
+        lower_body_center_x(atlas_cell(3, column))
+        for column in range(8)
+    ]
+    assert max(wave_body_centers) - min(wave_body_centers) <= 1.0, (
+        f"wave horizontal jitter: {wave_body_centers}"
+    )
     assert all(
         ImageChops.difference(atlas_cell(3, column), atlas_cell(4, column)).getbbox()
         is None
@@ -143,6 +172,8 @@ def main() -> None:
         "visiblePixels": visible_pixels,
         "idleFootBaselines": idle_foot_baselines,
         "waveFootBaselines": wave_foot_baselines,
+        "idleBodyCenters": [round(value, 3) for value in idle_body_centers],
+        "waveBodyCenters": [round(value, 3) for value in wave_body_centers],
         "hoverState": "grounded-wave",
         "transparentRgbResiduePixels": transparent_rgb_residue,
         "sourceChromaFringePixels": fringe_pixels,
