@@ -24,6 +24,11 @@ EDGE_RADIUS = 2
 ALPHA_MINIMUM = 16
 
 
+def rgb_diff_bbox(left: Image.Image, right: Image.Image):
+    """RGBA difference zeros out shared alpha, so compare flattened RGB."""
+    return ImageChops.difference(left.convert("RGB"), right.convert("RGB")).getbbox()
+
+
 def pixel_data(image: Image.Image):
     return (
         image.get_flattened_data()
@@ -117,7 +122,7 @@ def main() -> None:
 
     idle_foot_baselines = [
         atlas_cell(0, column).getchannel("A").getbbox()[3]
-        for column in range(7)
+        for column in range(6)
     ]
     assert len(set(idle_foot_baselines)) == 1, (
         f"idle baseline jitter: {idle_foot_baselines}"
@@ -132,7 +137,7 @@ def main() -> None:
     )
     idle_body_centers = [
         lower_body_center_x(atlas_cell(0, column))
-        for column in range(7)
+        for column in range(6)
     ]
     assert max(idle_body_centers) - min(idle_body_centers) <= 1.0, (
         f"idle horizontal jitter: {idle_body_centers}"
@@ -156,16 +161,30 @@ def main() -> None:
     )
     assert wave_face_locked, "wave animation changes pixels inside the face guard"
 
-    idle_open_frame_columns = (0, 1, 2, 3, 6)
+    idle_open_frame_columns = (0, 3, 4, 5)
+    idle_blink_frame_columns = (1, 2)
     idle_open_frame = atlas_cell(0, idle_open_frame_columns[0])
+    idle_blink_frame = atlas_cell(0, idle_blink_frame_columns[0])
     assert all(
-        ImageChops.difference(
-            idle_open_frame,
-            atlas_cell(0, column),
-        ).getbbox()
-        is None
+        rgb_diff_bbox(idle_open_frame, atlas_cell(0, column)) is None
         for column in idle_open_frame_columns[1:]
     ), "idle open-eye hold frames must be pixel-identical"
+    assert all(
+        rgb_diff_bbox(idle_blink_frame, atlas_cell(0, column)) is None
+        for column in idle_blink_frame_columns[1:]
+    ), "idle closed-eye blink frames must be pixel-identical"
+    assert rgb_diff_bbox(idle_open_frame, idle_blink_frame) is not None, (
+        "idle blink must use the GitHub closed-eye frame, not another open hold"
+    )
+    idle_head_lock = idle_open_frame.copy()
+    idle_blink_lock = idle_blink_frame.copy()
+    idle_head_lock.paste((0, 0, 0, 0), (72, 68, 139, 103))
+    idle_blink_lock.paste((0, 0, 0, 0), (72, 68, 139, 103))
+    assert rgb_diff_bbox(idle_head_lock, idle_blink_lock) is None, (
+        "idle blink must not move pixels outside the eyelids"
+    )
+    assert atlas_cell(0, 6).getchannel("A").getbbox() is None, "idle must use 6 official frames"
+    assert atlas_cell(0, 7).getchannel("A").getbbox() is None, "idle must use 6 official frames"
 
     animated_cells = [
         atlas_cell(row, column)
@@ -221,6 +240,8 @@ def main() -> None:
         "waveBodyCenters": [round(value, 3) for value in wave_body_centers],
         "waveFacePixelLock": wave_face_locked,
         "idleOpenFrameColumns": list(idle_open_frame_columns),
+        "idleBlinkFrameColumns": list(idle_blink_frame_columns),
+        "idleOfficialFrameCount": 6,
         "animatedCellsTouchingBounds": visible_border_pixels,
         "hoverState": "grounded-wave",
         "transparentRgbResiduePixels": transparent_rgb_residue,
