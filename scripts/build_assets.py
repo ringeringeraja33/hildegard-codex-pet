@@ -18,6 +18,10 @@ LOOK_SHEET_PATH = ROOT / "assets" / "look-directions.png"
 IDLE_GIF_PATH = ROOT / "assets" / "idle.gif"
 BUILD_REPORT_PATH = ROOT / "qa" / "build-report.json"
 WAVE_FACE_LOCK_BOX = (58, 28, 150, 130)
+# Official Codex idle uses 6 frames. Blink sits on the two 110ms slots.
+IDLE_DURATIONS_MS = (280, 110, 110, 140, 140, 320)
+# Atlas-space box covering both eyelids on the GitHub closed-eye frame.
+IDLE_EYE_BOX = (78, 74, 132, 96)
 
 CELL_WIDTH = 192
 CELL_HEIGHT = 208
@@ -39,7 +43,7 @@ ROW_LABELS = (
     "row 10 · look 180–337.5",
 )
 
-ACTIVE_FRAMES = (7, 8, 8, 8, 8, 8, 6, 6, 6, 8, 8)
+ACTIVE_FRAMES = (6, 8, 8, 8, 8, 8, 6, 6, 6, 8, 8)
 
 
 def remove_transparent_rgb(image: Image.Image) -> Image.Image:
@@ -156,33 +160,21 @@ def feathered_region_mask(
 
 
 def isolate_idle_eye_motion(frames: list[Image.Image]) -> list[Image.Image]:
-    """Keep the body fixed and copy only the eyelid region from each keyframe."""
-    base = frames[0]
-    width, height = base.size
-    eye_mask = feathered_region_mask(
-        base.size,
-        (
-            round(width * 0.27),
-            round(height * 0.23),
-            round(width * 0.79),
-            round(height * 0.48),
-        ),
-        blur_radius=4,
-    )
-    keyframes = [
-        remove_transparent_rgb(Image.composite(frame, base, eye_mask))
-        for frame in frames
-    ]
-    # Codex controls atlas playback speed globally, so keep five of the seven
-    # frames fully open and spend only two frames on the blink itself.
+    """Official 6-frame idle: GitHub open and fully-closed lids only, body locked."""
+    open_frame = render_pose(frames[0])
+    # Source order is open, half, closed, open. Skip the half-blink entirely.
+    closed_source = render_pose(frames[2])
+    aligned_closed = Image.new("RGBA", open_frame.size, (0, 0, 0, 0))
+    aligned_closed.alpha_composite(closed_source, (1, -1))
+    eye_mask = feathered_region_mask(open_frame.size, IDLE_EYE_BOX, blur_radius=2)
+    closed = remove_transparent_rgb(Image.composite(aligned_closed, open_frame, eye_mask))
     return [
-        keyframes[0].copy(),
-        keyframes[0].copy(),
-        keyframes[0].copy(),
-        keyframes[0].copy(),
-        keyframes[1],
-        keyframes[2],
-        keyframes[0].copy(),
+        open_frame.copy(),
+        closed.copy(),
+        closed.copy(),
+        open_frame.copy(),
+        open_frame.copy(),
+        open_frame.copy(),
     ]
 
 
@@ -285,8 +277,8 @@ def make_rows(
     transparent = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
     rows: list[list[Image.Image]] = []
 
-    idle = [render_pose(frame) for frame in isolate_idle_eye_motion(idle_sources)]
-    rows.append(idle + [transparent.copy()])
+    idle = isolate_idle_eye_motion(idle_sources)
+    rows.append(idle + [transparent.copy() for _ in range(2)])
 
     run_motion = ((-2, 0), (-1, -2), (0, -3), (1, -1), (2, 0), (1, -2), (0, -3), (-1, -1))
     rows.append([render_pose(poses[1], dx=dx, dy=dy, max_width=184) for dx, dy in run_motion])
@@ -385,7 +377,15 @@ def save_idle_gif(frames: list[Image.Image]) -> None:
         palette.paste(0, mask)
         palette.info["transparency"] = 0
         gif_frames.append(palette)
-    gif_frames[0].save(IDLE_GIF_PATH, save_all=True, append_images=gif_frames[1:], duration=(250, 250, 250, 250, 35, 45, 700), loop=0, disposal=2, transparency=0)
+    gif_frames[0].save(
+        IDLE_GIF_PATH,
+        save_all=True,
+        append_images=gif_frames[1:],
+        duration=list(IDLE_DURATIONS_MS),
+        loop=0,
+        disposal=2,
+        transparency=0,
+    )
 
 
 def main() -> None:
@@ -403,7 +403,7 @@ def main() -> None:
     atlas.save(ATLAS_PATH, "WEBP", lossless=True, method=6, exact=True)
     build_contact_sheet(rows).save(CONTACT_SHEET_PATH, "PNG", optimize=True)
     build_look_sheet(rows).save(LOOK_SHEET_PATH, "PNG", optimize=True)
-    save_idle_gif(rows[0][:7])
+    save_idle_gif(rows[0][:6])
 
     report = {"source": str(SOURCE.relative_to(ROOT)), "sourceSize": list(source.size), "animationSource": str(ANIMATION_SOURCE.relative_to(ROOT)), "animationSourceSize": list(animation_source.size), "poseCount": len(poses), "atlas": str(ATLAS_PATH.relative_to(ROOT)), "atlasSize": list(atlas.size), "grid": [COLUMNS, ROWS], "cellSize": [CELL_WIDTH, CELL_HEIGHT], "activeFrames": list(ACTIVE_FRAMES)}
     BUILD_REPORT_PATH.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
