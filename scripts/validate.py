@@ -79,6 +79,14 @@ def lower_body_center_x(frame: Image.Image) -> float:
     ) / total
 
 
+def first_visible_row_width(frame: Image.Image) -> int:
+    """Return silhouette width where the first visible pixels appear."""
+    alpha = frame.getchannel("A")
+    bound = alpha.getbbox()
+    assert bound is not None, "frame is empty"
+    return sum(alpha.getpixel((x, bound[1])) > 0 for x in range(alpha.width))
+
+
 def main() -> None:
     manifest_text = assert_utf8_text(MANIFEST)
     manifest = json.loads(manifest_text)
@@ -214,6 +222,14 @@ def main() -> None:
         for column in range(8)
     ), "hover row must reuse the grounded wave cycle"
 
+    reading_top_widths = {
+        "working": first_visible_row_width(atlas_cell(7, 0)),
+        "review": first_visible_row_width(atlas_cell(8, 0)),
+    }
+    assert all(width <= 8 for width in reading_top_widths.values()), (
+        f"reading-state vision flames are clipped: {reading_top_widths}"
+    )
+
     fringe_pixels = chroma_fringe_count(image)
     assert fringe_pixels == 0, f"source chroma fringe pixels: {fringe_pixels}"
 
@@ -244,6 +260,7 @@ def main() -> None:
         "idleOfficialFrameCount": 6,
         "animatedCellsTouchingBounds": visible_border_pixels,
         "hoverState": "grounded-wave",
+        "readingStateTopWidths": reading_top_widths,
         "transparentRgbResiduePixels": transparent_rgb_residue,
         "sourceChromaFringePixels": fringe_pixels,
         "utf8Readback": "passed",

@@ -58,21 +58,47 @@ def remove_transparent_rgb(image: Image.Image) -> Image.Image:
     return rgba
 
 
+def find_horizontal_pose_seams(sheet: Image.Image, rows: int) -> list[int]:
+    """Find low-coverage gaps near nominal row boundaries.
+
+    The generated 3×3 sheet is evenly laid out, but the two reading poses in
+    its bottom row extend above the nominal 2/3 boundary. Cropping at the
+    mathematical grid line cuts the vision-flame tips off. Search a narrow band
+    around each nominal boundary so those complete silhouettes stay together.
+    """
+    alpha = sheet.getchannel("A")
+    search_radius = max(1, sheet.height // 30)
+    seams = [0]
+    for row in range(1, rows):
+        nominal = round(sheet.height * row / rows)
+        start = max(seams[-1] + 1, nominal - search_radius)
+        stop = min(sheet.height - 1, nominal + search_radius)
+        coverage = {
+            y: sum(value > 0 for value in alpha.crop((0, y, sheet.width, y + 1)).getdata())
+            for y in range(start, stop + 1)
+        }
+        minimum = min(coverage.values())
+        candidates = [y for y, count in coverage.items() if count == minimum]
+        seams.append(min(candidates, key=lambda y: (abs(y - nominal), y)))
+    seams.append(sheet.height)
+    return seams
+
+
 def extract_poses(sheet: Image.Image) -> list[Image.Image]:
     if sheet.width % 3 or sheet.height % 3:
         raise ValueError(f"pose sheet must divide into 3×3 cells: {sheet.size}")
 
     source_cell_width = sheet.width // 3
-    source_cell_height = sheet.height // 3
+    row_seams = find_horizontal_pose_seams(sheet, 3)
     poses: list[Image.Image] = []
     for row in range(3):
         for column in range(3):
             cell = sheet.crop(
                 (
                     column * source_cell_width,
-                    row * source_cell_height,
+                    row_seams[row],
                     (column + 1) * source_cell_width,
-                    (row + 1) * source_cell_height,
+                    row_seams[row + 1],
                 )
             )
             alpha = cell.getchannel("A")

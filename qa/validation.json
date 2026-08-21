@@ -15,7 +15,7 @@
     192,
     208
   ],
-  "visiblePixels": 1328380,
+  "visiblePixels": 1308226,
   "idleFootBaselines": [
     204,
     204,
@@ -66,6 +66,10 @@
   "idleOfficialFrameCount": 6,
   "animatedCellsTouchingBounds": 0,
   "hoverState": "grounded-wave",
+  "readingStateTopWidths": {
+    "working": 4,
+    "review": 4
+  },
   "transparentRgbResiduePixels": 0,
   "sourceChromaFringePixels": 0,
   "utf8Readback": "passed"
